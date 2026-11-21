@@ -1,0 +1,6 @@
+{
+  "postgres": {
+    "driver": "postgres",
+    "dsn_env": "PIPECORE_PG_DSN"
+  }
+}

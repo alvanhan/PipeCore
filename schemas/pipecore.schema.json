@@ -385,6 +385,13 @@
           "type": "boolean",
           "default": false
         },
+        "layout": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/HeaderCell"
+          }
+        },
         "row": {
           "type": "integer",
           "format": "uint32",
@@ -396,6 +403,66 @@
       "required": [
         "background",
         "font_color"
+      ]
+    },
+    "HeaderCell": {
+      "type": "object",
+      "properties": {
+        "background": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "bold": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "column": {
+          "type": "integer",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "font_color": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "last_column": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "last_row": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "row": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "row",
+        "column",
+        "text"
       ]
     },
     "Match": {

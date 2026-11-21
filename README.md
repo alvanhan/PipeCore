@@ -15,7 +15,7 @@ PipeCore is a standalone Rust CLI for validating, importing, updating, and expor
 
 ## Install
 
-Download the Windows x86-64 ZIP or Linux x86-64 tarball from the [v0.1.0 release](https://github.com/alvanhan/PipeCore/releases/tag/v0.1.0). Verify the archive with the release's `SHA256SUMS` file and extract it. Linux requires a Debian 12 compatible environment with glibc 2.36 and OpenSSL 3. If necessary, run `chmod +x pipecore`. The executable does not require Rust, Excel, or ODBC.
+Download the Windows x86-64 ZIP or Linux x86-64 tarball from the [latest release](https://github.com/alvanhan/PipeCore/releases/latest). Verify the archive with the release's `SHA256SUMS` file and extract it. Linux requires a Debian 12 compatible environment with glibc 2.36 and OpenSSL 3. If necessary, run `chmod +x pipecore`. The executable does not require Rust, Excel, or ODBC.
 
 ## Quick start
 
@@ -34,11 +34,13 @@ export PIPECORE_PG_DSN='host=db.example.com port=5432 dbname=app user=app_user p
 
 On Windows, use `.\pipecore.exe` and set `$env:PIPECORE_PG_DSN` in PowerShell. For the SQL Server doctor example, use `--connection finance_mssql`. To upsert, replace the strict-update mapping with [upsert-finance.json](examples/upsert-finance.json).
 
-Input headers must match the mapping order. Store exact decimals and long integer values as Excel text. The export writer supports a flat header at a configurable row. Use the [developer guide](docs/DEVELOPER-GUIDE.md) for full mapping examples, an invoice table setup, and a Laravel integration. The [JSON Schema](schemas/pipecore.schema.json) describes the configuration structure.
+Input headers must match the mapping order. Store exact decimals and long integer values as Excel text. For export, `header.row` positions the column labels, and `header.layout` adds optional colored cells and merged ranges above them. See the [portable examples](examples/portable/) for both drivers and the [JSON Schema](schemas/pipecore.schema.json) for configuration fields.
 
 ## Integrate from an application
 
 Launch the executable with an argument array and supply the DSN in the child environment. Parse stdout as JSON and handle stderr separately. See [Laravel/PHP, Go, Java, and Python examples](examples/wrappers/).
+
+Use the [developer guide](docs/DEVELOPER-GUIDE.md) for Laravel integration and the [agent integration guide](AGENT/AGENT.MD) for a complete mapping and deployment reference. To hand off an integration, tell your coding agent to read `AGENT/AGENT.MD` first.
 
 | Exit | Meaning |
 | ---: | --- |

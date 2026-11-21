@@ -1,0 +1,245 @@
+{
+  "schema_version": "1.0",
+  "name": "finance_multi_sheet_export",
+  "operation": "export",
+  "connection": {
+    "driver": "mssql",
+    "dsn_env": "PIPECORE_MSSQL_DSN"
+  },
+  "workbook": {
+    "filename": "finance-export.xlsx",
+    "format": "xlsx",
+    "writer_mode": "constant_memory",
+    "auto_split_sheets": true,
+    "max_data_rows_per_sheet": 1048575,
+    "safe_text_mode": true
+  },
+  "execution": {
+    "memory_limit_mb": 512,
+    "fetch_rows": 10000,
+    "temp_dir": "./tmp"
+  },
+  "sheets": [
+    {
+      "name": "Transactions",
+      "source": {
+        "schema": "dbo",
+        "table": "finance_transactions",
+        "order_by": [
+          {
+            "column": "transaction_id",
+            "direction": "asc"
+          }
+        ]
+      },
+      "header": {
+        "row": 3,
+        "background": "#17365D",
+        "font_color": "#FFFFFF",
+        "bold": true,
+        "freeze": true,
+        "autofilter": true,
+        "layout": [
+          {
+            "text": "Finance Transactions",
+            "font_color": "#FFFFFF",
+            "row": 1,
+            "bold": true,
+            "last_column": 25,
+            "background": "#17365D",
+            "column": 1
+          },
+          {
+            "text": "Transaction",
+            "font_color": "#FFFFFF",
+            "row": 2,
+            "last_column": 4,
+            "background": "#245A81",
+            "column": 1
+          },
+          {
+            "text": "Posting and Currency",
+            "font_color": "#FFFFFF",
+            "row": 2,
+            "last_column": 9,
+            "background": "#356D91",
+            "column": 5
+          },
+          {
+            "text": "Amounts and Rates",
+            "font_color": "#FFFFFF",
+            "row": 2,
+            "last_column": 14,
+            "background": "#135E54",
+            "column": 10
+          },
+          {
+            "text": "Operations",
+            "font_color": "#FFFFFF",
+            "row": 2,
+            "last_column": 25,
+            "background": "#654683",
+            "column": 15
+          }
+        ]
+      },
+      "columns": [
+        {
+          "db_column": "transaction_id",
+          "excel_header": "Transaction ID",
+          "width": 38,
+          "format": "text"
+        },
+        {
+          "db_column": "account_id",
+          "excel_header": "Account ID",
+          "width": 38,
+          "format": "text"
+        },
+        {
+          "db_column": "customer_id",
+          "excel_header": "Customer ID",
+          "width": 38,
+          "format": "text"
+        },
+        {
+          "db_column": "reference_no",
+          "excel_header": "Reference No",
+          "width": 38,
+          "format": "text"
+        },
+        {
+          "db_column": "posting_date",
+          "excel_header": "Posting Date",
+          "width": 18,
+          "format": "text"
+        },
+        {
+          "db_column": "event_time",
+          "excel_header": "Event Time",
+          "width": 38,
+          "format": "text"
+        },
+        {
+          "db_column": "settled_at",
+          "excel_header": "Settled At",
+          "width": 38,
+          "format": "text"
+        },
+        {
+          "db_column": "time_of_day",
+          "excel_header": "Time Of Day",
+          "width": 18,
+          "format": "text"
+        },
+        {
+          "db_column": "currency_code",
+          "excel_header": "Currency",
+          "width": 38,
+          "format": "text"
+        },
+        {
+          "db_column": "debit_amount",
+          "excel_header": "Debit",
+          "width": 18,
+          "format": "text",
+          "decimal_as_text": true
+        },
+        {
+          "db_column": "credit_amount",
+          "excel_header": "Credit",
+          "width": 18,
+          "format": "text",
+          "decimal_as_text": true
+        },
+        {
+          "db_column": "balance_after",
+          "excel_header": "Balance After",
+          "width": 18,
+          "format": "text",
+          "decimal_as_text": true
+        },
+        {
+          "db_column": "fx_rate",
+          "excel_header": "FX Rate",
+          "width": 18,
+          "format": "text",
+          "decimal_as_text": true
+        },
+        {
+          "db_column": "tax_amount",
+          "excel_header": "Tax",
+          "width": 18,
+          "format": "text",
+          "decimal_as_text": true
+        },
+        {
+          "db_column": "quantity",
+          "excel_header": "Quantity",
+          "width": 18,
+          "format": "text"
+        },
+        {
+          "db_column": "units",
+          "excel_header": "Units",
+          "width": 18,
+          "format": "0"
+        },
+        {
+          "db_column": "is_reconciled",
+          "excel_header": "Reconciled",
+          "width": 18,
+          "format": "boolean"
+        },
+        {
+          "db_column": "branch_code",
+          "excel_header": "Branch",
+          "width": 38,
+          "format": "text"
+        },
+        {
+          "db_column": "description",
+          "excel_header": "Description",
+          "width": 38,
+          "format": "text"
+        },
+        {
+          "db_column": "source_system",
+          "excel_header": "Source System",
+          "width": 38,
+          "format": "text"
+        },
+        {
+          "db_column": "created_at",
+          "excel_header": "Created At",
+          "width": 38,
+          "format": "text"
+        },
+        {
+          "db_column": "batch_no",
+          "excel_header": "Batch No",
+          "width": 18,
+          "format": "0"
+        },
+        {
+          "db_column": "risk_score",
+          "excel_header": "Risk Score",
+          "width": 18,
+          "format": "0.########"
+        },
+        {
+          "db_column": "external_uuid",
+          "excel_header": "External UUID",
+          "width": 38,
+          "format": "text"
+        },
+        {
+          "db_column": "smallint_code",
+          "excel_header": "Smallint Code",
+          "width": 18,
+          "format": "0"
+        }
+      ]
+    }
+  ]
+}

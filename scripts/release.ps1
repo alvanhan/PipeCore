@@ -28,7 +28,7 @@ $checksums = foreach ($build in $builds) {
     New-Item -ItemType Directory -Force $package | Out-Null
     Copy-Item -LiteralPath $binary -Destination (Join-Path $package $build.Binary) -Force
     Copy-Item -LiteralPath README.md,LICENSE,CHANGELOG.md,SECURITY.md,CONTRIBUTING.md,IMPLEMENTATION.md -Destination $package -Force
-    foreach ($folder in @('examples','schemas','docs')) {
+    foreach ($folder in @('AGENT','examples','schemas','docs')) {
         $destination = Join-Path $package $folder
         New-Item -ItemType Directory -Force $destination | Out-Null
         Copy-Item -Path "$folder/*" -Destination $destination -Recurse -Force

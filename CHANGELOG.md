@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.1 — 2026-11-21
+
+- Added optional colored cells and merged ranges above the export column headers.
+- Adjusted the Excel row capacity to the configured header height and repeated
+  the layout on automatically split sheets.
+- Added portable examples and versioned Windows and Linux release folders.
+
 ## 0.1.0 — 2026-11-20
 
 - Implemented the Rust CLI: version, doctor, validate, import, export, mutate.

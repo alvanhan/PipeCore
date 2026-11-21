@@ -1,0 +1,6 @@
+{
+  "mssql": {
+    "driver": "mssql",
+    "dsn_env": "PIPECORE_MSSQL_DSN"
+  }
+}

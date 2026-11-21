@@ -1,0 +1,271 @@
+{
+  "name": "finance_transactions_upsert",
+  "operation": "mutate",
+  "schema_version": "1.0",
+  "connection": {
+    "driver": "mssql",
+    "dsn_env": "PIPECORE_MSSQL_DSN"
+  },
+  "target": {
+    "schema": "dbo",
+    "table": "finance_transactions"
+  },
+  "excel": {
+    "format": "xlsx",
+    "sheet": "Upserts",
+    "header_row": 1,
+    "first_data_row": 2,
+    "header_policy": "exact_order",
+    "reject_unknown_columns": true
+  },
+  "fields": [
+    {
+      "excel": "Transaction ID",
+      "column": "transaction_id",
+      "type": "string",
+      "required": true,
+      "max_length": 40
+    },
+    {
+      "excel": "Account ID",
+      "column": "account_id",
+      "type": "string",
+      "required": true,
+      "max_length": 36
+    },
+    {
+      "excel": "Customer ID",
+      "column": "customer_id",
+      "type": "string",
+      "required": true,
+      "max_length": 40
+    },
+    {
+      "excel": "Reference No",
+      "column": "reference_no",
+      "type": "string",
+      "required": false,
+      "max_length": 50
+    },
+    {
+      "excel": "Posting Date",
+      "column": "posting_date",
+      "type": "date",
+      "required": true,
+      "date_format": "%Y-%m-%d"
+    },
+    {
+      "excel": "Event Time",
+      "column": "event_time",
+      "type": "datetime",
+      "required": true,
+      "date_format": "%Y-%m-%d %H:%M:%S%.f"
+    },
+    {
+      "excel": "Settled At",
+      "column": "settled_at",
+      "type": "datetime_offset",
+      "required": true,
+      "date_format": "rfc3339"
+    },
+    {
+      "excel": "Time Of Day",
+      "column": "time_of_day",
+      "type": "time",
+      "required": true,
+      "date_format": "%H:%M:%S%.f"
+    },
+    {
+      "excel": "Currency",
+      "column": "currency_code",
+      "type": "string",
+      "required": true,
+      "max_length": 3
+    },
+    {
+      "excel": "Debit",
+      "column": "debit_amount",
+      "type": "decimal",
+      "required": true,
+      "precision": 20,
+      "scale": 4,
+      "excel_storage": "text"
+    },
+    {
+      "excel": "Credit",
+      "column": "credit_amount",
+      "type": "decimal",
+      "required": true,
+      "precision": 20,
+      "scale": 4,
+      "excel_storage": "text"
+    },
+    {
+      "excel": "Balance After",
+      "column": "balance_after",
+      "type": "decimal",
+      "required": true,
+      "precision": 24,
+      "scale": 4,
+      "excel_storage": "text"
+    },
+    {
+      "excel": "FX Rate",
+      "column": "fx_rate",
+      "type": "decimal",
+      "required": true,
+      "precision": 20,
+      "scale": 8,
+      "excel_storage": "text"
+    },
+    {
+      "excel": "Tax",
+      "column": "tax_amount",
+      "type": "decimal",
+      "required": true,
+      "precision": 20,
+      "scale": 4,
+      "excel_storage": "text"
+    },
+    {
+      "excel": "Quantity",
+      "column": "quantity",
+      "type": "int64",
+      "required": true,
+      "excel_storage": "text"
+    },
+    {
+      "excel": "Units",
+      "column": "units",
+      "type": "int32",
+      "required": true
+    },
+    {
+      "excel": "Reconciled",
+      "column": "is_reconciled",
+      "type": "boolean",
+      "required": true
+    },
+    {
+      "excel": "Branch",
+      "column": "branch_code",
+      "type": "string",
+      "required": true,
+      "max_length": 10
+    },
+    {
+      "excel": "Description",
+      "column": "description",
+      "type": "string",
+      "required": false,
+      "max_length": 200
+    },
+    {
+      "excel": "Source System",
+      "column": "source_system",
+      "type": "string",
+      "required": true,
+      "max_length": 30
+    },
+    {
+      "excel": "Created At",
+      "column": "created_at",
+      "type": "datetime",
+      "required": true,
+      "date_format": "%Y-%m-%d %H:%M:%S%.f"
+    },
+    {
+      "excel": "Batch No",
+      "column": "batch_no",
+      "type": "int32",
+      "required": true
+    },
+    {
+      "excel": "Risk Score",
+      "column": "risk_score",
+      "type": "float64",
+      "required": true
+    },
+    {
+      "excel": "External UUID",
+      "column": "external_uuid",
+      "type": "uuid",
+      "required": true
+    },
+    {
+      "excel": "Smallint Code",
+      "column": "smallint_code",
+      "type": "int16",
+      "required": true
+    }
+  ],
+  "validation": {
+    "strict": true,
+    "reject_formulas": true,
+    "reject_duplicate_keys": true,
+    "max_error_samples": 20,
+    "decimal_conversion": "reject_loss"
+  },
+  "execution": {
+    "atomic": true,
+    "memory_limit_mb": 512,
+    "batch_rows": 10000,
+    "temp_dir": "./tmp",
+    "error_report_format": "jsonl"
+  },
+  "mutation": {
+    "mode": "upsert",
+    "match": {
+      "keys": [
+        "transaction_id"
+      ],
+      "require_unique_index": true
+    },
+    "sets": [
+      {
+        "target": "balance_after",
+        "source": "balance_after",
+        "operation": "replace"
+      },
+      {
+        "target": "is_reconciled",
+        "source": "is_reconciled",
+        "operation": "replace"
+      },
+      {
+        "target": "event_time",
+        "source": "event_time",
+        "operation": "replace"
+      }
+    ],
+    "insert_columns": [
+      "transaction_id",
+      "account_id",
+      "customer_id",
+      "reference_no",
+      "posting_date",
+      "event_time",
+      "settled_at",
+      "time_of_day",
+      "currency_code",
+      "debit_amount",
+      "credit_amount",
+      "balance_after",
+      "fx_rate",
+      "tax_amount",
+      "quantity",
+      "units",
+      "is_reconciled",
+      "branch_code",
+      "description",
+      "source_system",
+      "created_at",
+      "batch_no",
+      "risk_score",
+      "external_uuid",
+      "smallint_code"
+    ],
+    "isolation": "serializable",
+    "max_serialization_retries": 2
+  }
+}

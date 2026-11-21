@@ -265,6 +265,30 @@ pub struct Header {
     pub freeze: bool,
     #[serde(default)]
     pub autofilter: bool,
+    #[serde(default)]
+    pub layout: Vec<HeaderCell>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct HeaderCell {
+    pub row: u32,
+    pub column: u16,
+    pub last_row: Option<u32>,
+    pub last_column: Option<u16>,
+    pub text: String,
+    pub background: Option<String>,
+    pub font_color: Option<String>,
+    pub bold: Option<bool>,
+}
+
+impl HeaderCell {
+    pub fn end(&self) -> (u32, u16) {
+        (
+            self.last_row.unwrap_or(self.row),
+            self.last_column.unwrap_or(self.column),
+        )
+    }
 }
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -292,6 +316,55 @@ fn unique<'a>(v: impl Iterator<Item = &'a str>) -> bool {
     v.into_iter().all(|x| seen.insert(x))
 }
 
+fn check_color(color: &str) -> Result<()> {
+    ensure!(
+        color.len() == 7
+            && color.starts_with('#')
+            && color.as_bytes()[1..].iter().all(u8::is_ascii_hexdigit),
+        "Invalid color; expected #RRGGBB"
+    );
+    Ok(())
+}
+
+fn check_header(sheet: &Sheet) -> Result<()> {
+    check_color(&sheet.header.background)?;
+    check_color(&sheet.header.font_color)?;
+    let mut used = HashSet::new();
+    let mut cells = 0u64;
+    for cell in &sheet.header.layout {
+        let (last_row, last_column) = cell.end();
+        ensure!(
+            cell.row > 0
+                && cell.row <= last_row
+                && last_row < sheet.header.row
+                && cell.column > 0
+                && cell.column <= last_column
+                && usize::from(last_column) <= sheet.columns.len(),
+            "Header layout ranges must be within the exported columns and above header.row"
+        );
+        ensure!(
+            cell.text.encode_utf16().count() <= 32767,
+            "Header text exceeds Excel cell limit"
+        );
+        for color in [&cell.background, &cell.font_color].into_iter().flatten() {
+            check_color(color)?;
+        }
+        cells += u64::from(last_row - cell.row + 1) * u64::from(last_column - cell.column + 1);
+        ensure!(
+            cells <= 32768,
+            "Header layout exceeds 32768 formatted cells"
+        );
+        for row in cell.row..=last_row {
+            for column in cell.column..=last_column {
+                ensure!(
+                    used.insert((row, column)),
+                    "Overlapping header layout ranges"
+                );
+            }
+        }
+    }
+    Ok(())
+}
 impl Config {
     pub fn read(path: &Path) -> Result<Self> {
         let c: Self = serde_json::from_reader(std::fs::File::open(path)?)?;
@@ -371,19 +444,12 @@ impl Config {
                 );
                 ensure!(
                     s.header.row > 0
-                        && s.header.row + w.max_data_rows_per_sheet <= 1048576
+                        && s.header.row < 1048576
                         && !s.columns.is_empty()
                         && s.columns.len() <= 16384,
                     "Invalid sheet dimensions"
                 );
-                for color in [&s.header.background, &s.header.font_color] {
-                    ensure!(
-                        color.len() == 7
-                            && color.starts_with('#')
-                            && u32::from_str_radix(&color[1..], 16).is_ok(),
-                        "Invalid color"
-                    );
-                }
+                check_header(s)?;
                 for c in &s.columns {
                     identifier(&c.db_column)?;
                     ensure!(c.width > 0.0 && c.width <= 255.0, "Invalid width");

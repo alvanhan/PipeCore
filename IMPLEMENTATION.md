@@ -1,6 +1,6 @@
 # Implementation and verification
 
-Date: 20 November 2026. This document describes the v0.1.0 implementation and its verification.
+This document describes the v0.1.x implementation and its verification.
 This file distinguishes implemented core behavior from verified release readiness.
 
 ## Implemented
@@ -20,6 +20,8 @@ This file distinguishes implemented core behavior from verified release readines
 - M7: release and audit tooling are available; execution results are recorded below.
 
 ## Verification ledger
+
+- In v0.1.1, export supports colored cells and merged ranges above a configurable column-header row. The one-row tests cover header rows 2 and 5, and a Windows PostgreSQL smoke check confirmed the layout and colors with an actual one-row export.
 
 - The final source passed Clippy and 22 tests, including Docker integration against PostgreSQL and SQL Server.
 - The preceding Windows release build completed native 4,000-row import, update, upsert, and export smoke checks on both databases. Microsoft Excel opened both exported workbooks and preserved the exact Debit value and header styling.

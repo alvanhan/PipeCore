@@ -31,6 +31,14 @@ impl Spool {
 }
 // ZIP budgets cover metadata loaded eagerly by calamine as well as streamed XML.
 pub fn guard(path: &Path, memory_mb: u64) -> Result<()> {
+    guard_workbook(path, memory_mb, false)
+}
+
+pub(crate) fn guard_export(path: &Path, memory_mb: u64) -> Result<()> {
+    guard_workbook(path, memory_mb, true)
+}
+
+fn guard_workbook(path: &Path, memory_mb: u64, allow_merges: bool) -> Result<()> {
     ensure!(
         path.extension()
             .is_some_and(|x| x.eq_ignore_ascii_case("xlsx")),
@@ -78,7 +86,7 @@ pub fn guard(path: &Path, memory_mb: u64) -> Result<()> {
                 match xml.read_event_into(&mut buf)? {
                     quick_xml::events::Event::Empty(e) | quick_xml::events::Event::Start(e) => {
                         ensure!(
-                            e.local_name().as_ref() != "mergeCell",
+                            allow_merges || e.local_name().as_ref() != "mergeCell",
                             "MERGED_CELLS_UNSUPPORTED"
                         );
                     }
