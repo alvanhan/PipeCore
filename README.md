@@ -1,6 +1,10 @@
 # PipeCore
 
-[![CI](https://github.com/alvanhan/PipeCore/actions/workflows/ci.yml/badge.svg)](https://github.com/alvanhan/PipeCore/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/alvanhan/PipeCore?logo=github)](https://github.com/alvanhan/PipeCore/releases/latest)
+[![Built with Rust](https://img.shields.io/badge/built%20with-Rust-000000?logo=rust)](Cargo.toml)
+[![Platforms: Windows and Linux](https://img.shields.io/badge/platform-Windows%20%7C%20Linux-2563eb)](#install)
+[![XLSX import and export](https://img.shields.io/badge/Excel-XLSX-217346)](#quick-start)
+[![PostgreSQL and SQL Server](https://img.shields.io/badge/databases-PostgreSQL%20%7C%20SQL%20Server-336791)](docs/DEVELOPER-GUIDE.md)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 PipeCore is a standalone Rust CLI for validating, importing, updating, and exporting XLSX data with PostgreSQL and Microsoft SQL Server. Each operation uses a JSON mapping and emits a structured result that any application can parse.

@@ -6,7 +6,7 @@ This file distinguishes implemented core behavior from verified release readines
 ## Implemented
 
 - M0: one Rust crate, strict serde configuration and semantic checks, JSON CLI,
-  doctor, Docker setup, generated JSON Schema, CI configuration.
+  doctor, Docker setup, and generated JSON Schema.
 - M1: calamine cell streaming with formula detection, header checks, exact decimal
   strings up to precision 38, typed validation, row provenance, JSONL errors,
   disk-backed duplicate detection and private spool.
@@ -51,4 +51,4 @@ This file distinguishes implemented core behavior from verified release readines
   input to prevent codepage substitution; use nvarchar for Unicode.
 - No arbitrary SQL, cross-database transactions, non-atomic batch commits,
   expression updates, flexible headers, merged cells or macros.
-- GitHub Actions runs the CI workflow for pushes and pull requests.
+- Run `scripts/test.ps1 -Integration` locally to check the CLI against both databases.
