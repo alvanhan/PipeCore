@@ -69,4 +69,8 @@ Copy-Item .env.example .env
 
 The development script provisions fixture tables. Integration tests use isolated schemas. See [Contributing](CONTRIBUTING.md), [implementation and verification](IMPLEMENTATION.md), [security](SECURITY.md), and the [changelog](CHANGELOG.md).
 
+## Maintainer
+
+PipeCore is maintained by [Alvan Hanani (@alvanhan)](https://github.com/alvanhan).
+
 [MIT License](LICENSE)
