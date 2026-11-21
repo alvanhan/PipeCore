@@ -1,0 +1,13 @@
+.env
+/target/
+/dist/
+/tmp/
+/output/
+*.partial.xlsx
+*.errors.jsonl
+.idea/
+.vscode/
+.DS_Store
+
+*.log
+/benchmark-results/

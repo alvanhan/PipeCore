@@ -1,0 +1,153 @@
+{
+  "schema_version": "1.0",
+  "name": "finance_multi_sheet_export",
+  "operation": "export",
+  "connection": {
+    "driver": "postgres",
+    "dsn_env": "PIPECORE_PG_DSN"
+  },
+  "workbook": {
+    "filename": "finance-export.xlsx",
+    "format": "xlsx",
+    "writer_mode": "constant_memory",
+    "auto_split_sheets": true,
+    "max_data_rows_per_sheet": 1048575,
+    "safe_text_mode": true
+  },
+  "execution": {
+    "memory_limit_mb": 512,
+    "fetch_rows": 10000,
+    "temp_dir": "./tmp"
+  },
+  "sheets": [
+    {
+      "name": "Transactions",
+      "source": {
+        "schema": "public",
+        "table": "finance_transactions",
+        "filters": [
+          {
+            "column": "posting_date",
+            "op": "gte",
+            "value": "2026-01-01"
+          }
+        ],
+        "order_by": [
+          {
+            "column": "transaction_id",
+            "direction": "asc"
+          }
+        ]
+      },
+      "header": {
+        "row": 1,
+        "background": "#17365D",
+        "font_color": "#FFFFFF",
+        "bold": true,
+        "freeze": true,
+        "autofilter": true
+      },
+      "columns": [
+        {
+          "db_column": "transaction_id",
+          "excel_header": "Transaction ID",
+          "width": 22,
+          "format": "text"
+        },
+        {
+          "db_column": "account_id",
+          "excel_header": "Account",
+          "width": 25,
+          "format": "text"
+        },
+        {
+          "db_column": "posting_date",
+          "excel_header": "Posting Date",
+          "width": 18,
+          "format": "yyyy-mm-dd"
+        },
+        {
+          "db_column": "debit_amount",
+          "excel_header": "Debit (Exact)",
+          "width": 24,
+          "format": "text",
+          "decimal_as_text": true
+        },
+        {
+          "db_column": "credit_amount",
+          "excel_header": "Credit (Exact)",
+          "width": 24,
+          "format": "text",
+          "decimal_as_text": true
+        },
+        {
+          "db_column": "balance_after",
+          "excel_header": "Closing Balance (Exact)",
+          "width": 26,
+          "format": "text",
+          "decimal_as_text": true
+        },
+        {
+          "db_column": "is_reconciled",
+          "excel_header": "Reconciled",
+          "width": 18,
+          "format": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "Accounts",
+      "source": {
+        "schema": "public",
+        "table": "finance_accounts",
+        "order_by": [
+          {
+            "column": "account_id",
+            "direction": "asc"
+          }
+        ]
+      },
+      "header": {
+        "row": 1,
+        "background": "#116466",
+        "font_color": "#FFFFFF",
+        "bold": true,
+        "freeze": true,
+        "autofilter": true
+      },
+      "columns": [
+        {
+          "db_column": "account_id",
+          "excel_header": "Account ID",
+          "width": 25,
+          "format": "text"
+        },
+        {
+          "db_column": "account_name",
+          "excel_header": "Account Name",
+          "width": 36,
+          "format": "text"
+        },
+        {
+          "db_column": "status",
+          "excel_header": "Status",
+          "width": 16,
+          "format": "text"
+        },
+        {
+          "db_column": "opened_date",
+          "excel_header": "Opened Date",
+          "width": 18,
+          "format": "yyyy-mm-dd"
+        },
+        {
+          "db_column": "current_balance",
+          "excel_header": "Account Balance (Exact)",
+          "width": 26,
+          "format": "text",
+          "decimal_as_text": true
+        }
+      ]
+    }
+  ]
+}

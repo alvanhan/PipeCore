@@ -1,0 +1,13 @@
+.git
+.env
+target
+output
+tmp
+benchmark-results
+*.log
+
+dist/*.zip
+dist/*.tar.gz
+dist/windows-x86_64
+dist/*/windows-x86_64
+dist/*/linux-x86_64

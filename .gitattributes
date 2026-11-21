@@ -1,0 +1,6 @@
+* text=auto eol=lf
+*.xlsx -text
+*.exe -text
+*.png -text
+*.zip -text
+*.gz -text

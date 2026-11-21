@@ -1,0 +1,660 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Config",
+  "type": "object",
+  "properties": {
+    "conflict_policy": {
+      "type": "string",
+      "default": "reject"
+    },
+    "connection": {
+      "$ref": "#/$defs/Connection"
+    },
+    "excel": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Excel"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "execution": {
+      "$ref": "#/$defs/Execution",
+      "default": {
+        "atomic": true,
+        "batch_rows": 10000,
+        "error_report_format": "jsonl",
+        "fetch_rows": 10000,
+        "memory_limit_mb": 512,
+        "temp_dir": "./tmp"
+      }
+    },
+    "fields": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Field"
+      }
+    },
+    "input": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "mutation": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Mutation"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "name": {
+      "type": "string"
+    },
+    "operation": {
+      "type": "string"
+    },
+    "output": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "schema_version": {
+      "type": "string"
+    },
+    "sheets": {
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/Sheet"
+      }
+    },
+    "target": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Table"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "validation": {
+      "$ref": "#/$defs/Validation",
+      "default": {
+        "decimal_conversion": "reject_loss",
+        "max_error_samples": 20,
+        "reject_duplicate_keys": true,
+        "reject_formulas": true,
+        "strict": true
+      }
+    },
+    "workbook": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Workbook"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "name",
+    "operation",
+    "connection"
+  ],
+  "$defs": {
+    "Column": {
+      "type": "object",
+      "properties": {
+        "db_column": {
+          "type": "string"
+        },
+        "decimal_as_text": {
+          "type": "boolean",
+          "default": false
+        },
+        "excel_header": {
+          "type": "string"
+        },
+        "format": {
+          "type": "string"
+        },
+        "width": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "db_column",
+        "excel_header",
+        "width",
+        "format"
+      ]
+    },
+    "Connection": {
+      "type": "object",
+      "properties": {
+        "driver": {
+          "type": "string"
+        },
+        "dsn_env": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "driver",
+        "dsn_env"
+      ]
+    },
+    "Excel": {
+      "type": "object",
+      "properties": {
+        "first_data_row": {
+          "type": "integer",
+          "format": "uint32",
+          "default": 2,
+          "minimum": 0
+        },
+        "format": {
+          "type": "string",
+          "default": "xlsx"
+        },
+        "header_policy": {
+          "type": "string",
+          "default": "exact_order"
+        },
+        "header_row": {
+          "type": "integer",
+          "format": "uint32",
+          "default": 1,
+          "minimum": 0
+        },
+        "reject_unknown_columns": {
+          "type": "boolean",
+          "default": true
+        },
+        "sheet": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sheets": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SheetSelector"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "Execution": {
+      "type": "object",
+      "properties": {
+        "atomic": {
+          "type": "boolean",
+          "default": true
+        },
+        "batch_rows": {
+          "type": "integer",
+          "format": "uint",
+          "default": 10000,
+          "minimum": 0
+        },
+        "error_report_format": {
+          "type": "string",
+          "default": "jsonl"
+        },
+        "fetch_rows": {
+          "type": "integer",
+          "format": "uint",
+          "default": 10000,
+          "minimum": 0
+        },
+        "memory_limit_mb": {
+          "type": "integer",
+          "format": "uint64",
+          "default": 512,
+          "minimum": 0
+        },
+        "temp_dir": {
+          "type": "string",
+          "default": "./tmp"
+        }
+      },
+      "additionalProperties": false
+    },
+    "Field": {
+      "type": "object",
+      "properties": {
+        "column": {
+          "type": "string"
+        },
+        "date_format": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "empty_as_null": {
+          "type": "boolean",
+          "default": false
+        },
+        "enum": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "excel": {
+          "type": "string"
+        },
+        "excel_storage": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "max": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "max_length": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint",
+          "minimum": 0
+        },
+        "min": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "null_tokens": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "precision": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "regex": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "required": {
+          "type": "boolean",
+          "default": false
+        },
+        "scale": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "sensitive": {
+          "type": "boolean",
+          "default": false
+        },
+        "trim": {
+          "type": "boolean",
+          "default": false
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "excel",
+        "column",
+        "type"
+      ]
+    },
+    "Filter": {
+      "type": "object",
+      "properties": {
+        "column": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string"
+        },
+        "value": true
+      },
+      "additionalProperties": false,
+      "required": [
+        "column",
+        "op",
+        "value"
+      ]
+    },
+    "Header": {
+      "type": "object",
+      "properties": {
+        "autofilter": {
+          "type": "boolean",
+          "default": false
+        },
+        "background": {
+          "type": "string"
+        },
+        "bold": {
+          "type": "boolean",
+          "default": false
+        },
+        "font_color": {
+          "type": "string"
+        },
+        "freeze": {
+          "type": "boolean",
+          "default": false
+        },
+        "row": {
+          "type": "integer",
+          "format": "uint32",
+          "default": 1,
+          "minimum": 0
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "background",
+        "font_color"
+      ]
+    },
+    "Match": {
+      "type": "object",
+      "properties": {
+        "keys": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "must_match_all": {
+          "type": "boolean",
+          "default": false
+        },
+        "require_unique_index": {
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "keys"
+      ]
+    },
+    "Mutation": {
+      "type": "object",
+      "properties": {
+        "insert_columns": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
+        "isolation": {
+          "type": "string",
+          "default": "serializable"
+        },
+        "match": {
+          "$ref": "#/$defs/Match"
+        },
+        "max_serialization_retries": {
+          "type": "integer",
+          "format": "uint8",
+          "default": 0,
+          "maximum": 255,
+          "minimum": 0
+        },
+        "mode": {
+          "type": "string"
+        },
+        "sets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Set"
+          }
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "match",
+        "sets"
+      ]
+    },
+    "Order": {
+      "type": "object",
+      "properties": {
+        "column": {
+          "type": "string"
+        },
+        "direction": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "column",
+        "direction"
+      ]
+    },
+    "Set": {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "target",
+        "source",
+        "operation"
+      ]
+    },
+    "Sheet": {
+      "type": "object",
+      "properties": {
+        "columns": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Column"
+          }
+        },
+        "header": {
+          "$ref": "#/$defs/Header"
+        },
+        "name": {
+          "type": "string"
+        },
+        "source": {
+          "$ref": "#/$defs/Source"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "source",
+        "header",
+        "columns"
+      ]
+    },
+    "SheetSelector": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string"
+        },
+        "names": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "same_layout": {
+          "type": "boolean"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "mode",
+        "names",
+        "same_layout"
+      ]
+    },
+    "Source": {
+      "type": "object",
+      "properties": {
+        "filters": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Filter"
+          }
+        },
+        "order_by": {
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/Order"
+          }
+        },
+        "schema": {
+          "type": "string"
+        },
+        "table": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "table"
+      ]
+    },
+    "Table": {
+      "type": "object",
+      "properties": {
+        "schema": {
+          "type": "string"
+        },
+        "table": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "table"
+      ]
+    },
+    "Validation": {
+      "type": "object",
+      "properties": {
+        "decimal_conversion": {
+          "type": "string",
+          "default": "reject_loss"
+        },
+        "max_error_samples": {
+          "type": "integer",
+          "format": "uint",
+          "default": 20,
+          "minimum": 0
+        },
+        "reject_duplicate_keys": {
+          "type": "boolean",
+          "default": true
+        },
+        "reject_formulas": {
+          "type": "boolean",
+          "default": true
+        },
+        "strict": {
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "Workbook": {
+      "type": "object",
+      "properties": {
+        "auto_split_sheets": {
+          "type": "boolean",
+          "default": true
+        },
+        "filename": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "format": {
+          "type": "string",
+          "default": "xlsx"
+        },
+        "max_data_rows_per_sheet": {
+          "type": "integer",
+          "format": "uint32",
+          "default": 1048575,
+          "minimum": 0
+        },
+        "safe_text_mode": {
+          "type": "boolean",
+          "default": true
+        },
+        "writer_mode": {
+          "type": "string",
+          "default": "constant_memory"
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

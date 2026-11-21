@@ -1,0 +1,25 @@
+name: Bug report
+description: Report an issue using PipeCore
+title: "[Bug]: "
+body:
+  - type: input
+    id: environment
+    attributes:
+      label: Version, OS, and database
+      placeholder: "0.1.0, Windows x86-64, PostgreSQL 17"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include the command and a minimal mapping and workbook with synthetic data. Remove credentials and private data.
+    validations:
+      required: true
+  - type: textarea
+    id: result
+    attributes:
+      label: Expected and actual results
+      description: Include the relevant JSON status, code, and anonymized error details.
+    validations:
+      required: true

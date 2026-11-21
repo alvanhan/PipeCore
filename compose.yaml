@@ -1,0 +1,51 @@
+name: pipecore-dev
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?configure .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?configure .env}
+      POSTGRES_DB: ${POSTGRES_DB:?configure .env}
+    ports:
+      - "127.0.0.1:15432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    platform: linux/amd64
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?configure .env}
+    ports:
+      - "127.0.0.1:11433:1433"
+    volumes:
+      - mssql_data:/var/opt/mssql
+
+  rust-dev:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    working_dir: /workspace
+    volumes:
+      - ./:/workspace
+      - cargo_registry:/usr/local/cargo/registry
+      - cargo_git:/usr/local/cargo/git
+    environment:
+      # DEV ONLY: local container database credentials; production uses TLS verification.
+      PIPECORE_PG_DSN: "host=postgres port=5432 user=${POSTGRES_USER} password=${POSTGRES_PASSWORD} dbname=${POSTGRES_DB} sslmode=disable"
+      PIPECORE_MSSQL_DSN: "Server=mssql,1433;Database=PipeCoreTest;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=true"
+      RUST_BACKTRACE: "1"
+    command: ["sleep", "infinity"]
+
+volumes:
+  postgres_data:
+  mssql_data:
+  cargo_registry:
+  cargo_git:

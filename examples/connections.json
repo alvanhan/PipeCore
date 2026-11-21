@@ -1,0 +1,4 @@
+{
+  "finance_pg": { "driver": "postgres", "dsn_env": "PIPECORE_PG_DSN" },
+  "finance_mssql": { "driver": "mssql", "dsn_env": "PIPECORE_MSSQL_DSN" }
+}
