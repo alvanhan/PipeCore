@@ -59,6 +59,37 @@ Use the [developer guide](docs/DEVELOPER-GUIDE.md) for Laravel integration and t
 
 For a write, check `committed` in addition to the exit code. If `commit_outcome` is `unknown`, reconcile the target before retrying. `--dry-run` checks target metadata and staging without changing target rows. Target constraints and triggers still apply to a real write. The optional `--report` path stores a JSON summary. Where available, `error_report_path` points to the detailed JSONL diagnostics.
 
+## Benchmark
+
+PipeCore **v0.1.1** processed a **500,000-row, 25-column** synthetic financial workbook (98.0 MiB). Import with a confirmed commit took **26.24 s** on PostgreSQL (19,056 rows/s) and **47.09 s** on SQL Server (10,618 rows/s).
+
+The Windows x86-64 release binary ran on Windows 11 with an Intel Core i5-11400H (6 cores, 12 threads) and 15.77 GiB of RAM. PostgreSQL 17.12 and SQL Server 2022 Developer (16.0.4325.4) ran in local Docker containers, with 4 CPUs and 3.83 GiB of RAM available to Docker. The CLI connected over loopback.
+
+Each scenario was measured once per database, sequentially. Time comes from the CLI report's `elapsed_ms` and includes database calls. Memory is the observed Windows peak working set of the PipeCore process. Browser upload time, application overhead, and database and Docker memory are outside the measurement.
+
+| Scenario | PostgreSQL time | PostgreSQL peak RAM | SQL Server time | SQL Server peak RAM |
+| --- | ---: | ---: | ---: | ---: |
+| Validate workbook | 15.93 s | 9.4 MiB | 14.36 s | 9.4 MiB |
+| Import, dry run | 22.15 s | 15.1 MiB | 43.03 s | 19.4 MiB |
+| Import and commit | 26.24 s | 15.1 MiB | 47.09 s | 19.3 MiB |
+| Strict update, dry run | 6.50 s | 15.1 MiB | 10.09 s | 19.4 MiB |
+| Strict update and commit | 15.39 s | 15.1 MiB | 12.60 s | 19.4 MiB |
+| Strict update rejected with one missing key | 7.22 s | 15.1 MiB | 10.45 s | 19.3 MiB |
+| Mixed upsert, dry run | 23.53 s | 15.2 MiB | 38.25 s | 19.4 MiB |
+| Mixed upsert and commit | 27.41 s | 15.1 MiB | 42.18 s | 19.4 MiB |
+| Export, one sheet with plain header | 20.34 s | 10.1 MiB | 25.82 s | 14.4 MiB |
+| Export, one sheet with merged header | 19.33 s | 10.4 MiB | 25.97 s | 14.3 MiB |
+| Export, five currency sheets with plain headers | 20.69 s | 10.4 MiB | 26.34 s | 14.6 MiB |
+| Export, five currency sheets with merged headers | 20.59 s | 10.3 MiB | 26.49 s | 14.6 MiB |
+| Date-filtered export, plain headers (1,300 rows) | 0.16 s | 9.1 MiB | 0.19 s | 13.4 MiB |
+| Date-filtered export, merged headers (1,300 rows) | 0.15 s | 9.2 MiB | 0.19 s | 13.4 MiB |
+| Export, dry run | 9.51 s | 9.1 MiB | 15.64 s | 13.9 MiB |
+| Export, automatic split into two sheets | 20.07 s | 10.5 MiB | 26.01 s | 14.4 MiB |
+
+Import started with an empty fixture table. Strict update used a four-column workbook derived from the same transactions and flipped the reconciliation flag for all 500,000 rows. Mixed upsert started with 250,000 existing IDs and committed 250,000 inserts and 250,000 updates.
+
+SQL checks confirmed the write counts, unchanged target rows in dry runs, and zero updates when strict update encountered a missing key. Workbook checks confirmed the per-currency row counts, 1,300 date-filtered rows, and two 250,000-row sheets when automatic splitting was set to that limit. Spot checks confirmed that exact decimal and long integer values survived export. Export dry runs created no workbook.
+
 ## Develop
 
 With Docker Desktop in Linux container mode, run these commands from PowerShell:
