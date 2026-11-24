@@ -23,6 +23,17 @@ pub struct Spool {
     pub count: u64,
 }
 impl Spool {
+    pub fn write_output(&self, path: &Path) -> Result<()> {
+        let parent = path.parent().filter(|dir| !dir.as_os_str().is_empty());
+        let mut output = tempfile::NamedTempFile::new_in(parent.unwrap_or(Path::new(".")))?;
+        std::io::copy(&mut File::open(self.file.path())?, output.as_file_mut())?;
+        crate::check_cancelled()?;
+        output
+            .persist_noclobber(path)
+            .map_err(|error| error.error)?;
+        Ok(())
+    }
+
     pub fn rows(&self) -> Result<impl Iterator<Item = Result<Row>>> {
         Ok(BufReader::new(File::open(self.file.path())?)
             .lines()

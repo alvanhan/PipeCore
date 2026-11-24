@@ -67,6 +67,8 @@ pub struct Config {
     #[serde(default = "reject")]
     pub conflict_policy: String,
     pub mutation: Option<Mutation>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub replace_scope: Vec<Filter>,
     pub workbook: Option<Workbook>,
     #[serde(default)]
     pub sheets: Vec<Sheet>,
@@ -185,10 +187,20 @@ pub struct Mutation {
     pub sets: Vec<Set>,
     #[serde(default)]
     pub insert_columns: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delete_flag: Option<DeleteFlag>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scope: Vec<Filter>,
     #[serde(default = "serial")]
     pub isolation: String,
     #[serde(default)]
     pub max_serialization_retries: u8,
+}
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct DeleteFlag {
+    pub column: String,
+    pub value: serde_json::Value,
 }
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -203,8 +215,11 @@ pub struct Match {
 #[serde(deny_unknown_fields)]
 pub struct Set {
     pub target: String,
+    #[serde(default)]
     pub source: String,
     pub operation: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<serde_json::Value>,
 }
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -216,6 +231,8 @@ pub struct Workbook {
     pub writer_mode: String,
     #[serde(default = "yes")]
     pub auto_split_sheets: bool,
+    #[serde(default)]
+    pub split_files: bool,
     #[serde(default = "rows")]
     pub max_data_rows_per_sheet: u32,
     #[serde(default = "yes")]
@@ -293,12 +310,24 @@ impl HeaderCell {
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Column {
+    #[serde(default)]
     pub db_column: String,
+    #[serde(
+        default,
+        deserialize_with = "constant_value",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub value: Option<serde_json::Value>,
     pub excel_header: String,
     pub width: f64,
     pub format: String,
     #[serde(default)]
     pub decimal_as_text: bool,
+}
+fn constant_value<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<Option<serde_json::Value>, D::Error> {
+    serde_json::Value::deserialize(deserializer).map(Some)
 }
 pub fn identifier(s: &str) -> Result<()> {
     ensure!(
@@ -366,6 +395,12 @@ fn check_header(sheet: &Sheet) -> Result<()> {
     Ok(())
 }
 impl Config {
+    pub fn is_delete_flag(&self, column: &str) -> bool {
+        self.mutation
+            .as_ref()
+            .and_then(|m| m.delete_flag.as_ref())
+            .is_some_and(|df| df.column == column)
+    }
     pub fn read(path: &Path) -> Result<Self> {
         let c: Self = serde_json::from_reader(std::fs::File::open(path)?)?;
         c.check()?;
@@ -373,6 +408,25 @@ impl Config {
     }
     pub fn check(&self) -> Result<()> {
         ensure!(self.schema_version == "1.0", "Unsupported schema_version");
+        if !self.replace_scope.is_empty() {
+            ensure!(self.operation == "import", "replace_scope requires import");
+            ensure!(
+                unique(self.replace_scope.iter().map(|f| f.column.as_str())),
+                "Duplicate replacement scope column"
+            );
+            for filter in &self.replace_scope {
+                ensure!(
+                    filter.op == "eq"
+                        && (filter.value.is_string()
+                            || filter.value.is_number()
+                            || filter.value.is_boolean())
+                        && self.fields.iter().any(|field| field.column == filter.column
+                            && field.required
+                            && (field.kind != "string" || filter.value.is_string())),
+                    "Replacement scope requires non-null equality on required import fields"
+                );
+            }
+        }
         ensure!(
             matches!(self.operation.as_str(), "import" | "export" | "mutate"),
             "Unsupported operation"
@@ -416,6 +470,7 @@ impl Config {
                 w.format == "xlsx"
                     && w.writer_mode == "constant_memory"
                     && w.safe_text_mode
+                    && (!w.split_files || w.auto_split_sheets)
                     && (1..=1048575).contains(&w.max_data_rows_per_sheet),
                 "Invalid workbook options"
             );
@@ -451,7 +506,20 @@ impl Config {
                 );
                 check_header(s)?;
                 for c in &s.columns {
-                    identifier(&c.db_column)?;
+                    if c.db_column.is_empty() {
+                        ensure!(
+                            c.value
+                                .as_ref()
+                                .is_some_and(|value| !value.is_array() && !value.is_object()),
+                            "Invalid constant export value"
+                        );
+                    } else {
+                        identifier(&c.db_column)?;
+                        ensure!(
+                            c.value.is_none(),
+                            "Export column cannot have both db_column and value"
+                        );
+                    }
                     ensure!(c.width > 0.0 && c.width <= 255.0, "Invalid width");
                 }
                 for f in &s.source.filters {
@@ -565,7 +633,6 @@ impl Config {
                     matches!(m.mode.as_str(), "update_strict" | "upsert")
                         && m.isolation == "serializable"
                         && m.max_serialization_retries <= 5
-                        && m.matching.require_unique_index
                         && !m.matching.keys.is_empty()
                         && !m.sets.is_empty(),
                     "Invalid mutation policy"
@@ -587,14 +654,65 @@ impl Config {
                         "Key must be required source field"
                     );
                 }
-                for s in &m.sets {
+                if let Some(df) = &m.delete_flag {
                     ensure!(
-                        has(&s.source)
-                            && has(&s.target)
-                            && s.operation == "replace"
-                            && !m.matching.keys.contains(&s.target),
+                        has(&df.column)
+                            && !m.matching.keys.contains(&df.column)
+                            && !m.insert_columns.contains(&df.column)
+                            && (df.value.is_string()
+                                || df.value.is_number()
+                                || df.value.is_boolean()),
+                        "Invalid delete_flag configuration"
+                    );
+                }
+                if !m.scope.is_empty() {
+                    ensure!(
+                        unique(m.scope.iter().map(|f| f.column.as_str())),
+                        "Duplicate mutation scope column"
+                    );
+                    for filter in &m.scope {
+                        identifier(&filter.column)?;
+                        ensure!(
+                            filter.op == "eq"
+                                && (filter.value.is_string()
+                                    || filter.value.is_number()
+                                    || filter.value.is_boolean()),
+                            "Mutation scope requires non-null equality filters"
+                        );
+                    }
+                }
+                for s in &m.sets {
+                    identifier(&s.target)?;
+                    ensure!(
+                        !m.matching.keys.contains(&s.target)
+                            && !self.is_delete_flag(&s.target),
                         "Invalid update mapping"
                     );
+                    match s.operation.as_str() {
+                        "replace" => {
+                            ensure!(
+                                has(&s.source)
+                                    && has(&s.target)
+                                    && !self.is_delete_flag(&s.source)
+                                    && s.value.is_none(),
+                                "Invalid update mapping"
+                            );
+                        }
+                        "set_value" => {
+                            ensure!(
+                                s.source.is_empty()
+                                    && s.value.as_ref().is_some_and(|v| !v.is_array() && !v.is_object()),
+                                "Invalid set_value mapping"
+                            );
+                        }
+                        "current_timestamp" => {
+                            ensure!(
+                                s.source.is_empty() && s.value.is_none(),
+                                "Invalid current_timestamp mapping"
+                            );
+                        }
+                        _ => anyhow::bail!("Invalid update mapping"),
+                    }
                 }
                 for n in &m.insert_columns {
                     ensure!(has(n), "Unknown insert column");

@@ -66,6 +66,12 @@
         "null"
       ]
     },
+    "replace_scope": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Filter"
+      }
+    },
     "schema_version": {
       "type": "string"
     },
@@ -119,7 +125,8 @@
       "type": "object",
       "properties": {
         "db_column": {
-          "type": "string"
+          "type": "string",
+          "default": ""
         },
         "decimal_as_text": {
           "type": "boolean",
@@ -131,6 +138,7 @@
         "format": {
           "type": "string"
         },
+        "value": true,
         "width": {
           "type": "number",
           "format": "double"
@@ -138,7 +146,6 @@
       },
       "additionalProperties": false,
       "required": [
-        "db_column",
         "excel_header",
         "width",
         "format"
@@ -715,6 +722,10 @@
         "safe_text_mode": {
           "type": "boolean",
           "default": true
+        },
+        "split_files": {
+          "type": "boolean",
+          "default": false
         },
         "writer_mode": {
           "type": "string",

@@ -48,6 +48,7 @@ pub struct Summary {
     pub missing_rows: u64,
     pub inserted_rows: u64,
     pub updated_rows: u64,
+    pub deleted_rows: u64,
     pub exported_rows: u64,
     pub error_count: u64,
 }
@@ -65,6 +66,8 @@ pub struct Report {
     pub errors: Vec<Detail>,
     pub error_report_path: Option<String>,
     pub elapsed_ms: u128,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output_format: Option<String>,
     #[serde(skip)]
     pub max_samples: usize,
     #[serde(skip)]
@@ -85,6 +88,7 @@ impl Report {
             errors: vec![],
             error_report_path: None,
             elapsed_ms: 0,
+            output_format: None,
             max_samples: 20,
             writer: None,
         }

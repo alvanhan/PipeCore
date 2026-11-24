@@ -33,6 +33,7 @@ struct Job {
     schema: PathBuf,
     #[arg(long)]
     input: Option<PathBuf>,
+    /// XLSX output for export, or a new NDJSON file for validate.
     #[arg(long)]
     output: Option<PathBuf>,
     #[arg(long)]

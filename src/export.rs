@@ -5,7 +5,9 @@ use crate::{
 };
 use anyhow::{Result, ensure};
 use rust_xlsxwriter::{Color, Format, FormatAlign, Workbook, Worksheet};
-use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, fs::File, path::Path};
+use tempfile::NamedTempFile;
+use zip::{ZipWriter, write::SimpleFileOptions};
 
 fn header_format(background: &str, font_color: &str, bold: bool) -> Result<Format> {
     let mut format = Format::new()
@@ -72,7 +74,7 @@ fn finish(sheet: &mut Worksheet, s: &Sheet, rows: u32) -> Result<()> {
     }
     Ok(())
 }
-fn value_string(v: &serde_json::Value) -> Result<String> {
+pub(crate) fn value_string(v: &serde_json::Value) -> Result<String> {
     Ok(match v {
         serde_json::Value::String(s) => s.clone(),
         serde_json::Value::Bool(b) => if *b { "1" } else { "0" }.into(),
@@ -91,13 +93,18 @@ pub fn select(db: &Db, s: &Sheet, meta: &[Meta]) -> Result<(String, Vec<String>)
         .columns
         .iter()
         .map(|c| {
-            get(&c.db_column)?.sql_type(db.pg())?;
+            if c.db_column.is_empty() {
+                return Ok(db.text("NULL"));
+            }
             let m = get(&c.db_column)?;
+            m.sql_type(db.pg())?;
             if db.pg() && m.logical() == "datetime_offset" {
                 Ok(format!(
                     "to_char({} AT TIME ZONE 'UTC', 'YYYY-MM-DD\"T\"HH24:MI:SS.US\"Z\"')",
                     db.q(&c.db_column)
                 ))
+            } else if !db.pg() && m.logical() == "datetime" {
+                Ok(format!("CONVERT(nvarchar(max),{},121)", db.q(&c.db_column)))
             } else {
                 Ok(db.text(&db.q(&c.db_column)))
             }
@@ -108,6 +115,10 @@ pub fn select(db: &Db, s: &Sheet, meta: &[Meta]) -> Result<(String, Vec<String>)
     let mut conditions = vec![];
     for f in &s.source.filters {
         let m = get(&f.column)?;
+        if f.op == "eq" && f.value.is_null() {
+            conditions.push(format!("{} IS NULL", db.q(&f.column)));
+            continue;
+        }
         let kind = m.sql_type(db.pg())?;
         let vals = if matches!(f.op.as_str(), "in" | "between") {
             f.value
@@ -172,6 +183,25 @@ pub fn select(db: &Db, s: &Sheet, meta: &[Meta]) -> Result<(String, Vec<String>)
     }
     Ok((sql, params))
 }
+fn add_part(
+    zip: &mut ZipWriter<File>,
+    book: &mut Workbook,
+    temp: &NamedTempFile,
+    index: u32,
+    memory_limit: u64,
+) -> Result<()> {
+    book.save(temp.path())?;
+    crate::excel::guard_export(temp.path(), memory_limit)?;
+    zip.start_file(
+        format!("part-{index:03}.xlsx"),
+        SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Stored)
+            .large_file(true),
+    )?;
+    std::io::copy(&mut File::open(temp.path())?, zip)?;
+    Ok(())
+}
+
 pub async fn export(
     db: &mut Db,
     c: &Config,
@@ -191,6 +221,8 @@ pub async fn export(
     let mut book = Workbook::new();
     book.set_tempdir(&c.execution.temp_dir)?;
     let options = c.workbook.as_ref().unwrap();
+    let mut archive: Option<(NamedTempFile, ZipWriter<File>)> = None;
+    let mut part = 1u32;
     db.begin().await?;
     let result = async {
         for s in &c.sheets {
@@ -207,8 +239,8 @@ pub async fn export(
                 .map(|c| {
                     meta.iter()
                         .find(|m| m.name == c.db_column)
-                        .unwrap()
-                        .logical()
+                        .map(Meta::logical)
+                        .unwrap_or("constant")
                 })
                 .collect();
             let formats: Vec<_> = s
@@ -227,16 +259,72 @@ pub async fn export(
                 if rows == rows_per_sheet {
                     ensure!(options.auto_split_sheets, "SHEET_ROW_LIMIT");
                     finish(&mut sheet, s, rows)?;
-                    index += 1;
-                    let next = start(&mut book, s, index)?;
-                    book.push_worksheet(std::mem::replace(&mut sheet, next));
+                    if options.split_files {
+                        let mut next_book = Workbook::new();
+                        next_book.set_tempdir(&c.execution.temp_dir)?;
+                        let next_sheet = start(&mut next_book, s, 1)?;
+                        book.push_worksheet(std::mem::replace(&mut sheet, next_sheet));
+                        if !dry {
+                            if archive.is_none() {
+                                let file = NamedTempFile::new_in(parent)?;
+                                let zip = ZipWriter::new(file.reopen()?);
+                                archive = Some((file, zip));
+                            }
+                            add_part(
+                                &mut archive.as_mut().unwrap().1,
+                                &mut book,
+                                &temp,
+                                part,
+                                c.execution.memory_limit_mb,
+                            )?;
+                        }
+                        part += 1;
+                        book = next_book;
+                    } else {
+                        index += 1;
+                        let next = start(&mut book, s, index)?;
+                        book.push_worksheet(std::mem::replace(&mut sheet, next));
+                    }
                     rows = 0;
                 }
+                if values.iter().all(Option::is_none)
+                    && s.columns
+                        .iter()
+                        .all(|column| column.value.as_ref().is_none_or(serde_json::Value::is_null))
+                {
+                    sheet.write_blank(s.header.row + rows, 0, &formats[0])?;
+                }
                 for (i, v) in values.iter().enumerate() {
-                    if let Some(v) = v {
-                        let r = s.header.row + rows;
-                        let col = i as u16;
-                        let conf = &s.columns[i];
+                    let r = s.header.row + rows;
+                    let col = i as u16;
+                    let conf = &s.columns[i];
+                    if kinds[i] == "constant" {
+                        match conf.value.as_ref().unwrap() {
+                            serde_json::Value::Null => {}
+                            serde_json::Value::Bool(b) => {
+                                sheet.write_boolean(r, col, *b)?;
+                            }
+                            serde_json::Value::String(s) => {
+                                sheet.write_string_with_format(r, col, s, &formats[i])?;
+                            }
+                            serde_json::Value::Number(n) => {
+                                let text = n.to_string();
+                                if conf.format == "text"
+                                    || text.bytes().filter(u8::is_ascii_digit).count() > 15
+                                {
+                                    sheet.write_string_with_format(r, col, &text, &formats[i])?;
+                                } else {
+                                    sheet.write_number_with_format(
+                                        r,
+                                        col,
+                                        n.as_f64().unwrap(),
+                                        &formats[i],
+                                    )?;
+                                }
+                            }
+                            _ => unreachable!("constant was checked in config"),
+                        }
+                    } else if let Some(v) = v {
                         match kinds[i] {
                             "boolean" if conf.format != "text" => {
                                 sheet.write_boolean(
@@ -283,9 +371,13 @@ pub async fn export(
             book.push_worksheet(sheet);
         }
         if !dry {
-            book.save(temp.path())?;
-            temp.as_file().sync_all()?;
-            crate::excel::guard_export(temp.path(), c.execution.memory_limit_mb)?;
+            if let Some((_, zip)) = &mut archive {
+                add_part(zip, &mut book, &temp, part, c.execution.memory_limit_mb)?;
+            } else {
+                book.save(temp.path())?;
+                temp.as_file().sync_all()?;
+                crate::excel::guard_export(temp.path(), c.execution.memory_limit_mb)?;
+            }
         }
         Ok::<(), anyhow::Error>(())
     }
@@ -295,7 +387,15 @@ pub async fn export(
     rollback?;
     if !dry {
         crate::check_cancelled()?;
-        temp.persist(output).map_err(|e| e.error)?;
+        if let Some((file, zip)) = archive {
+            zip.finish()?.sync_all()?;
+            file.persist(output.with_extension("zip"))
+                .map_err(|e| e.error)?;
+            report.output_format = Some("zip".into());
+        } else {
+            temp.persist(output).map_err(|e| e.error)?;
+            report.output_format = Some("xlsx".into());
+        }
     }
     Ok(())
 }

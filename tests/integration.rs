@@ -152,6 +152,7 @@ async fn suite(driver: &str) {
     export.workbook.as_mut().unwrap().max_data_rows_per_sheet = 3000;
     export.sheets[0].columns.push(pipecore::config::Column {
         db_column: "description".into(),
+        value: None,
         excel_header: "Description".into(),
         width: 40.0,
         format: "text".into(),

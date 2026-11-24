@@ -87,6 +87,7 @@ impl Meta {
                 if pg { "timestamptz" } else { "datetimeoffset" },
                 self.time_precision.unwrap_or(6)
             ),
+            "datetime" | "smalldatetime" if !pg => self.kind.clone(),
             "uuid" | "uniqueidentifier" => {
                 if pg {
                     "uuid".into()
@@ -109,13 +110,40 @@ impl Meta {
             "boolean" | "bit" => "boolean",
             "date" => "date",
             "time without time zone" | "time" => "time",
-            "timestamp without time zone" | "datetime2" => "datetime",
+            "timestamp without time zone" | "datetime2" | "datetime" | "smalldatetime" => {
+                "datetime"
+            }
             "timestamp with time zone" | "datetimeoffset" => "datetime_offset",
             "uuid" | "uniqueidentifier" => "uuid",
             _ => "unsupported",
         }
     }
 }
+fn field_sql_type(f: &crate::config::Field, meta: &[Meta], pg: bool) -> Result<String> {
+    if let Some(m) = meta.iter().find(|m| m.name == f.column) {
+        return m.sql_type(pg);
+    }
+    Ok(match f.kind.as_str() {
+        "string" => if pg { "text" } else { "nvarchar(max)" }.into(),
+        "int16" => "smallint".into(),
+        "int32" => if pg { "integer" } else { "int" }.into(),
+        "int64" => "bigint".into(),
+        "decimal" => format!(
+            "decimal({},{})",
+            f.precision.unwrap_or(38),
+            f.scale.unwrap_or(0)
+        ),
+        "float64" => if pg { "double precision" } else { "float(53)" }.into(),
+        "boolean" => if pg { "boolean" } else { "bit" }.into(),
+        "date" => "date".into(),
+        "time" => "time(6)".into(),
+        "datetime" => if pg { "timestamp(6)" } else { "datetime2(6)" }.into(),
+        "datetime_offset" => if pg { "timestamptz(6)" } else { "datetimeoffset(6)" }.into(),
+        "uuid" => if pg { "uuid" } else { "uniqueidentifier" }.into(),
+        _ => anyhow::bail!("Unsupported virtual column type"),
+    })
+}
+
 impl Db {
     pub async fn connect(c: &Connection) -> Result<Self> {
         let dsn = std::env::var(&c.dsn_env)
@@ -188,14 +216,24 @@ impl Db {
         Ok(())
     }
     pub async fn execute(&mut self, sql: &str) -> Result<u64> {
+        self.execute_bound(sql, &[]).await
+    }
+    async fn execute_bound(&mut self, sql: &str, params: &[String]) -> Result<u64> {
         Ok(match self {
-            Self::Pg(c) => c.execute(sql, &[]).await?,
+            Self::Pg(c) => {
+                let values: Vec<&(dyn tokio_postgres::types::ToSql + Sync)> =
+                    params.iter().map(|value| value as _).collect();
+                c.execute(sql, &values).await?
+            }
             Self::Ms(c) => {
                 // DONE tokens also include trigger writes. Report the outer DML count.
+                let values: Vec<&dyn tiberius::ToSql> =
+                    params.iter().map(|value| value as _).collect();
                 let mut rows = c
-                    .simple_query(format!(
-                        "{sql}; SELECT CONVERT(nvarchar(max),@@ROWCOUNT) AS __pc_count"
-                    ))
+                    .query(
+                        format!("{sql}; SELECT CONVERT(nvarchar(max),@@ROWCOUNT) AS __pc_count"),
+                        &values,
+                    )
                     .await?
                     .into_row_stream();
                 let mut count = None;
@@ -261,7 +299,10 @@ impl Db {
         Ok(rows)
     }
     pub async fn scalar(&mut self, sql: &str) -> Result<u64> {
-        let r = self.query(sql, &[]).await?;
+        self.scalar_bound(sql, &[]).await
+    }
+    async fn scalar_bound(&mut self, sql: &str, params: &[String]) -> Result<u64> {
+        let r = self.query(sql, params).await?;
         Ok(r[0][0].as_ref().unwrap().parse()?)
     }
     pub async fn inspect(&mut self, t: &Table) -> Result<Vec<Meta>> {
@@ -330,10 +371,7 @@ impl Db {
         let defs: Vec<_> = c
             .fields
             .iter()
-            .map(|f| {
-                let m = meta.iter().find(|m| m.name == f.column).unwrap();
-                Ok(format!("{} {}", self.q(&f.column), m.sql_type(pg)?))
-            })
+            .map(|f| Ok(format!("{} {}", self.q(&f.column), field_sql_type(f, meta, pg)?)))
             .collect::<Result<_>>()?;
         let provenance = if pg {
             "__excel_sheet text NOT NULL, __excel_row bigint NOT NULL"
@@ -352,6 +390,23 @@ impl Db {
             .map(|f| self.q(&f.column))
             .chain(["__excel_sheet".into(), "__excel_row".into()])
             .collect::<Vec<_>>();
+        let select = if pg {
+            String::new()
+        } else {
+            let mut values = Vec::with_capacity(columns.len());
+            for (field, column) in c.fields.iter().zip(&columns) {
+                if field.kind == "datetime" {
+                    values.push(format!(
+                        "CONVERT({}, {column}, 121)",
+                        field_sql_type(field, meta, pg)?
+                    ));
+                } else {
+                    values.push(column.clone());
+                }
+            }
+            values.extend(columns[c.fields.len()..].iter().cloned());
+            values.join(",")
+        };
         match self {
             Self::Pg(client) => {
                 let sink = client
@@ -430,7 +485,7 @@ impl Db {
                 client
                     .execute(
                         format!(
-                            "INSERT INTO {stage} ({0}) SELECT {0} FROM #pc_wire",
+                            "INSERT INTO {stage} ({0}) SELECT {select} FROM #pc_wire",
                             columns.join(",")
                         ),
                         &[],
@@ -454,10 +509,10 @@ impl Db {
 }
 pub fn precheck(c: &Config, meta: &[Meta]) -> Result<()> {
     for f in &c.fields {
-        let m = meta
-            .iter()
-            .find(|m| m.name == f.column)
-            .ok_or_else(|| anyhow::anyhow!("TARGET_SCHEMA_MISMATCH"))?;
+        let Some(m) = meta.iter().find(|m| m.name == f.column) else {
+            ensure!(c.is_delete_flag(&f.column), "TARGET_SCHEMA_MISMATCH");
+            continue;
+        };
         ensure!(
             !m.generated && m.logical() == f.kind,
             "TARGET_SCHEMA_MISMATCH"
@@ -500,27 +555,83 @@ pub fn precheck(c: &Config, meta: &[Meta]) -> Result<()> {
         }
     }
     if let Some(m) = &c.mutation {
-        for s in &m.sets {
-            let source = c.fields.iter().find(|f| f.column == s.source).unwrap();
-            let target = c.fields.iter().find(|f| f.column == s.target).unwrap();
+        for filter in &m.scope {
             ensure!(
-                source.kind == target.kind
-                    && source.precision == target.precision
-                    && source.scale == target.scale
-                    && source.max_length == target.max_length,
-                "Incompatible replacement mapping"
+                meta.iter().any(|col| col.name == filter.column),
+                "TARGET_SCHEMA_MISMATCH"
             );
+        }
+        for s in &m.sets {
+            let target_meta = meta
+                .iter()
+                .find(|col| col.name == s.target)
+                .ok_or_else(|| anyhow::anyhow!("TARGET_SCHEMA_MISMATCH"))?;
+            ensure!(!target_meta.generated, "TARGET_SCHEMA_MISMATCH");
+            match s.operation.as_str() {
+                "replace" => {
+                    let source = c.fields.iter().find(|f| f.column == s.source).unwrap();
+                    let target = c.fields.iter().find(|f| f.column == s.target).unwrap();
+                    ensure!(
+                        source.kind == target.kind
+                            && source.precision == target.precision
+                            && source.scale == target.scale
+                            && source.max_length == target.max_length,
+                        "Incompatible replacement mapping"
+                    );
+                }
+                "set_value" => {
+                    if s.value.as_ref().is_some_and(serde_json::Value::is_null) {
+                        ensure!(target_meta.nullable, "TARGET_SCHEMA_MISMATCH");
+                    }
+                }
+                "current_timestamp" => {
+                    ensure!(
+                        matches!(
+                            target_meta.logical(),
+                            "date" | "datetime" | "datetime_offset"
+                        ),
+                        "TARGET_SCHEMA_MISMATCH"
+                    );
+                }
+                _ => anyhow::bail!("Incompatible replacement mapping"),
+            }
         }
     }
     Ok(())
 }
 pub fn check_values(c: &Config, meta: &[Meta], spool: &Spool, report: &mut Report) -> Result<()> {
     let map: HashMap<_, _> = meta.iter().map(|m| (m.name.as_str(), m)).collect();
+    let text_scope: Vec<_> = c
+        .replace_scope
+        .iter()
+        .filter_map(|filter| {
+            let field = c
+                .fields
+                .iter()
+                .position(|field| field.column == filter.column && field.kind == "string")?;
+            Some((field, &filter.value))
+        })
+        .collect();
     for row in spool.rows()? {
         crate::check_cancelled()?;
         let row = row?;
+        for &(index, expected) in &text_scope {
+            if row.values[index].as_deref() != expected.as_str() {
+                let mut detail = Detail::new(
+                    "REPLACE_SCOPE_MISMATCH",
+                    "Workbook contains rows outside the replacement scope",
+                );
+                detail.sheet = Some(row.sheet.clone());
+                detail.row = Some(row.row);
+                detail.column = Some(column(index));
+                detail.field = Some(c.fields[index].column.clone());
+                report.error(detail)?;
+            }
+        }
         for (i, (v, f)) in row.values.iter().zip(&c.fields).enumerate() {
-            let m = map[f.column.as_str()];
+            let Some(&m) = map.get(f.column.as_str()) else {
+                continue;
+            };
             let mut bad = v.is_none() && !m.nullable;
             if let Some(v) = v {
                 if c.connection.driver == "mssql" && matches!(m.kind.as_str(), "varchar" | "char") {
@@ -534,6 +645,21 @@ pub fn check_values(c: &Config, meta: &[Meta], spool: &Spool, report: &mut Repor
                 {
                     let n = fraction.bytes().take_while(u8::is_ascii_digit).count();
                     bad |= n > p as usize;
+                }
+                if matches!(m.kind.as_str(), "datetime" | "smalldatetime") {
+                    use chrono::Timelike;
+                    let d = chrono::NaiveDateTime::parse_from_str(v, "%Y-%m-%d %H:%M:%S%.f")?;
+                    let ns = d.nanosecond();
+                    bad |= if m.kind == "datetime" {
+                        v.as_str() < "1753-01-01"
+                            || ns % 1_000_000 != 0
+                            || !matches!(ns / 1_000_000 % 10, 0 | 3 | 7)
+                    } else {
+                        v.as_str() < "1900-01-01"
+                            || v.as_str() >= "2079-06-07"
+                            || d.second() != 0
+                            || ns != 0
+                    };
                 }
             }
             if bad {
@@ -566,6 +692,7 @@ pub async fn apply(
         let _ = db.rollback().await;
         report.summary.inserted_rows = 0;
         report.summary.updated_rows = 0;
+        report.summary.deleted_rows = 0;
     }
     outcome
 }
@@ -595,7 +722,12 @@ async fn apply_transaction(
         db.inspect(c.target.as_ref().unwrap()).await? == meta,
         "Target metadata changed during validation"
     );
-    if !keys.is_empty() {
+    if !keys.is_empty()
+        && (c.operation != "mutate"
+            || c.mutation
+                .as_ref()
+                .is_some_and(|m| m.matching.require_unique_index))
+    {
         let indexes = db.unique_keys(c.target.as_ref().unwrap()).await?;
         ensure!(
             indexes
@@ -628,6 +760,50 @@ async fn apply_transaction(
         .collect::<Vec<_>>()
         .join(",");
     if c.operation == "import" {
+        if !c.replace_scope.is_empty() {
+            ensure!(
+                spool.count > 0,
+                "Cannot replace a scope with an empty workbook"
+            );
+            let mut values = Vec::new();
+            let mut clauses = Vec::new();
+            for filter in &c.replace_scope {
+                let column = meta.iter().find(|m| m.name == filter.column).unwrap();
+                values.push(crate::export::value_string(&filter.value)?);
+                let mut parameter = db.param(values.len());
+                if db.pg() {
+                    parameter.push_str("::text");
+                }
+                clauses.push(format!(
+                    "{} = CAST({parameter} AS {})",
+                    db.q(&column.name),
+                    column.sql_type(db.pg())?
+                ));
+            }
+            let scope = clauses.join(" AND ");
+            let outside = db
+                .scalar_bound(
+                    &format!(
+                        "SELECT {} FROM {stage} WHERE CASE WHEN {scope} THEN 0 ELSE 1 END = 1",
+                        db.text("COUNT(*)")
+                    ),
+                    &values,
+                )
+                .await?;
+            if outside > 0 {
+                report.error(Detail::new(
+                    "REPLACE_SCOPE_MISMATCH",
+                    "Workbook contains rows outside the replacement scope",
+                ))?;
+                return Ok(());
+            }
+            if dry {
+                return Ok(());
+            }
+            report.summary.deleted_rows = db
+                .execute_bound(&format!("DELETE FROM {table} WHERE {scope}"), &values)
+                .await?;
+        }
         if dry {
             if !keys.is_empty() {
                 let join = keys
@@ -654,22 +830,73 @@ async fn apply_transaction(
         report.summary.inserted_rows = n;
     } else {
         let m = c.mutation.as_ref().unwrap();
+        let pg = db.pg();
+        let push_param = |params: &mut Vec<String>, val: String, sql_type: &str| -> String {
+            params.push(val);
+            let mut p = if pg {
+                format!("${}", params.len())
+            } else {
+                format!("@P{}", params.len())
+            };
+            if pg {
+                p.push_str("::text");
+            }
+            format!("CAST({p} AS {sql_type})")
+        };
+        let build_scope = |params: &mut Vec<String>| -> Result<Vec<String>> {
+            let mut clauses = Vec::new();
+            for filter in &m.scope {
+                let col = meta.iter().find(|col| col.name == filter.column).unwrap();
+                let expr = push_param(
+                    params,
+                    crate::export::value_string(&filter.value)?,
+                    &col.sql_type(pg)?,
+                );
+                let qcol = if pg {
+                    format!("\"{}\"", col.name.replace('"', "\"\""))
+                } else {
+                    format!("[{}]", col.name.replace(']', "]]"))
+                };
+                clauses.push(format!("t.{qcol} = {expr}"));
+            }
+            Ok(clauses)
+        };
+        let delete_flag_info = if let Some(df) = &m.delete_flag {
+            let f = c.fields.iter().find(|f| f.column == df.column).unwrap();
+            Some((
+                db.q(&df.column),
+                crate::export::value_string(&df.value)?,
+                field_sql_type(f, meta, pg)?,
+            ))
+        } else {
+            None
+        };
         let join = keys
             .iter()
             .map(|k| format!("t.{0}=s.{0}", db.q(k)))
             .collect::<Vec<_>>()
             .join(" AND ");
-        let locked = if db.pg() {
+        let locked = if pg {
             format!("{table} t")
         } else {
             format!("{table} t WITH (UPDLOCK,HOLDLOCK)")
         };
-        let missing = format!("NOT EXISTS (SELECT 1 FROM {locked} WHERE {join})");
+        let mut scope_params = Vec::new();
+        let scope_clauses = build_scope(&mut scope_params)?;
+        let join_scoped = if scope_clauses.is_empty() {
+            join.clone()
+        } else {
+            format!("{join} AND {}", scope_clauses.join(" AND "))
+        };
+        let missing = format!("NOT EXISTS (SELECT 1 FROM {locked} WHERE {join_scoped})");
         report.summary.missing_rows = db
-            .scalar(&format!(
-                "SELECT {} FROM {stage} s WHERE {missing}",
-                db.text("COUNT(*)")
-            ))
+            .scalar_bound(
+                &format!(
+                    "SELECT {} FROM {stage} s WHERE {missing}",
+                    db.text("COUNT(*)")
+                ),
+                &scope_params,
+            )
             .await?;
         report.summary.matched_rows = spool.count - report.summary.missing_rows;
         if m.mode == "update_strict" && report.summary.missing_rows > 0 {
@@ -682,7 +909,7 @@ async fn apply_transaction(
                     .collect::<Vec<_>>()
                     .join(",")
             );
-            db.stream(&sql, &[], |r| {
+            db.stream(&sql, &scope_params, |r| {
                 let mut d = Detail::new("KEY_NOT_FOUND", "Key not found in target");
                 d.sheet = r[0].clone();
                 d.row = Some(r[1].as_ref().unwrap().parse()?);
@@ -711,45 +938,176 @@ async fn apply_transaction(
             .await?;
             return Ok(());
         }
+        if !m.matching.require_unique_index {
+            let t_keys = keys
+                .iter()
+                .map(|k| format!("t.{}", db.q(k)))
+                .collect::<Vec<_>>()
+                .join(",");
+            let where_scope = if scope_clauses.is_empty() {
+                String::new()
+            } else {
+                format!(" WHERE {}", scope_clauses.join(" AND "))
+            };
+            let ambiguous = db
+                .scalar_bound(
+                    &format!(
+                        "SELECT {} FROM (SELECT {t_keys} FROM {table} t JOIN {stage} s ON {join}{where_scope} GROUP BY {t_keys} HAVING COUNT(*)>1) d",
+                        db.text("COUNT(*)")
+                    ),
+                    &scope_params,
+                )
+                .await?;
+            if ambiguous > 0 {
+                report.error(Detail::new(
+                    "AMBIGUOUS_TARGET_KEY",
+                    "Multiple target rows match a single source key",
+                ))?;
+                return Ok(());
+            }
+        }
+        let to_delete = if let Some((df_col, df_val, df_type)) = delete_flag_info.as_ref() {
+            let mut params = Vec::new();
+            let sc = build_scope(&mut params)?;
+            let j = if sc.is_empty() {
+                join.clone()
+            } else {
+                format!("{join} AND {}", sc.join(" AND "))
+            };
+            let df_expr = push_param(&mut params, df_val.clone(), df_type);
+            db.scalar_bound(
+                &format!(
+                    "SELECT {} FROM {stage} s WHERE s.{df_col} = {df_expr} AND EXISTS (SELECT 1 FROM {locked} WHERE {j})",
+                    db.text("COUNT(*)")
+                ),
+                &params,
+            )
+            .await?
+        } else {
+            0
+        };
+        let to_update = report.summary.matched_rows - to_delete;
         if dry {
             return Ok(());
         }
-        let sets = m
-            .sets
-            .iter()
-            .map(|s| format!("{}=s.{}", db.q(&s.target), db.q(&s.source)))
-            .collect::<Vec<_>>()
-            .join(",");
-        let sql = if db.pg() {
-            format!("UPDATE {table} t SET {sets} FROM {stage} s WHERE {join}")
-        } else {
-            format!(
-                "UPDATE t SET {sets} FROM {table} t WITH (UPDLOCK,HOLDLOCK) JOIN {stage} s ON {join}"
-            )
-        };
-        let n = db.execute(&sql).await?;
-        ensure!(n == report.summary.matched_rows, "Update count mismatch");
-        report.summary.updated_rows = n;
+        if to_delete > 0 {
+            let (df_col, df_val, df_type) = delete_flag_info.as_ref().unwrap();
+            let mut params = Vec::new();
+            let mut conds = build_scope(&mut params)?;
+            let df_expr = push_param(&mut params, df_val.clone(), df_type);
+            conds.push(format!("s.{df_col} = {df_expr}"));
+            let sql = if pg {
+                format!(
+                    "DELETE FROM {table} t USING {stage} s WHERE {join} AND {}",
+                    conds.join(" AND ")
+                )
+            } else {
+                format!(
+                    "DELETE t FROM {table} t WITH (UPDLOCK,HOLDLOCK) JOIN {stage} s ON {join} WHERE {}",
+                    conds.join(" AND ")
+                )
+            };
+            let n = db.execute_bound(&sql, &params).await?;
+            ensure!(n == to_delete, "Delete count mismatch");
+            report.summary.deleted_rows = n;
+        }
+        if to_update > 0 {
+            let mut params = Vec::new();
+            let mut set_clauses = Vec::with_capacity(m.sets.len());
+            for s in &m.sets {
+                let col = db.q(&s.target);
+                match s.operation.as_str() {
+                    "replace" => set_clauses.push(format!("{col}=s.{}", db.q(&s.source))),
+                    "current_timestamp" => set_clauses.push(format!("{col}=CURRENT_TIMESTAMP")),
+                    "set_value" => {
+                        let val = s.value.as_ref().unwrap();
+                        if val.is_null() {
+                            set_clauses.push(format!("{col}=NULL"));
+                        } else {
+                            let target_meta = meta.iter().find(|cm| cm.name == s.target).unwrap();
+                            let expr = push_param(
+                                &mut params,
+                                crate::export::value_string(val)?,
+                                &target_meta.sql_type(pg)?,
+                            );
+                            set_clauses.push(format!("{col}={expr}"));
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+            }
+            let mut conds = build_scope(&mut params)?;
+            if let Some((df_col, df_val, df_type)) = delete_flag_info.as_ref() {
+                let df_expr = push_param(&mut params, df_val.clone(), df_type);
+                conds.push(format!("(s.{df_col} IS NULL OR s.{df_col} <> {df_expr})"));
+            }
+            let sets = set_clauses.join(",");
+            let sql = if pg {
+                let extra = if conds.is_empty() {
+                    String::new()
+                } else {
+                    format!(" AND {}", conds.join(" AND "))
+                };
+                format!("UPDATE {table} t SET {sets} FROM {stage} s WHERE {join}{extra}")
+            } else {
+                let extra = if conds.is_empty() {
+                    String::new()
+                } else {
+                    format!(" WHERE {}", conds.join(" AND "))
+                };
+                format!(
+                    "UPDATE t SET {sets} FROM {table} t WITH (UPDLOCK,HOLDLOCK) JOIN {stage} s ON {join}{extra}"
+                )
+            };
+            let n = db.execute_bound(&sql, &params).await?;
+            ensure!(n == to_update, "Update count mismatch");
+            report.summary.updated_rows = n;
+        }
         if m.mode == "upsert" {
-            let cols = m
-                .insert_columns
-                .iter()
-                .map(|n| db.q(n))
-                .collect::<Vec<_>>()
-                .join(",");
-            let select = m
-                .insert_columns
-                .iter()
-                .map(|n| format!("s.{}", db.q(n)))
-                .collect::<Vec<_>>()
-                .join(",");
-            let n = db
-                .execute(&format!(
-                    "INSERT INTO {table} ({cols}) SELECT {select} FROM {stage} s WHERE {missing}"
-                ))
+            let mut params = Vec::new();
+            let sc = build_scope(&mut params)?;
+            let j = if sc.is_empty() {
+                join.clone()
+            } else {
+                format!("{join} AND {}", sc.join(" AND "))
+            };
+            let mut cond = format!("NOT EXISTS (SELECT 1 FROM {locked} WHERE {j})");
+            if let Some((df_col, df_val, df_type)) = delete_flag_info.as_ref() {
+                let df_expr = push_param(&mut params, df_val.clone(), df_type);
+                cond.push_str(&format!(
+                    " AND (s.{df_col} IS NULL OR s.{df_col} <> {df_expr})"
+                ));
+            }
+            let expected_insert = db
+                .scalar_bound(
+                    &format!("SELECT {} FROM {stage} s WHERE {cond}", db.text("COUNT(*)")),
+                    &params,
+                )
                 .await?;
-            ensure!(n == report.summary.missing_rows, "Insert count mismatch");
-            report.summary.inserted_rows = n;
+            if expected_insert > 0 {
+                let cols = m
+                    .insert_columns
+                    .iter()
+                    .map(|n| db.q(n))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let select = m
+                    .insert_columns
+                    .iter()
+                    .map(|n| format!("s.{}", db.q(n)))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                let n = db
+                    .execute_bound(
+                        &format!(
+                            "INSERT INTO {table} ({cols}) SELECT {select} FROM {stage} s WHERE {cond}"
+                        ),
+                        &params,
+                    )
+                    .await?;
+                ensure!(n == expected_insert, "Insert count mismatch");
+                report.summary.inserted_rows = n;
+            }
         }
     }
     if !dry {

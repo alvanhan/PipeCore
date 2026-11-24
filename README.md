@@ -40,6 +40,12 @@ On Windows, use `.\pipecore.exe` and set `$env:PIPECORE_PG_DSN` in PowerShell. F
 
 Input headers must match the mapping order. Store exact decimals and long integer values as Excel text. For export, `header.row` positions the column labels, and `header.layout` adds optional colored cells and merged ranges above them. See the [portable examples](examples/portable/) for both drivers and the [JSON Schema](schemas/pipecore.schema.json) for configuration fields.
 
+- Insert a workbook-only column at any position in `sheets[].columns`. Supply `excel_header`, `width`, and `format` as usual and use `"value": null` for blank cells or a string, number, or boolean for a fixed value. Use `db_column` for database-backed columns.
+- Set `workbook.split_files` to `true` to package split output as `part-001.xlsx`, `part-002.xlsx`, and so on. The XLSX row limit includes header rows. Pass an XLSX path to `--output`. PipeCore uses that path for single-file output and changes the extension to `.zip` when a split is needed. Read `output_format` from the JSON response.
+- To replace a subset on import, set `replace_scope` to non-null equality filters, for example `[{"column":"report_date","op":"eq","value":"2026-11-30"}]`. Each scope column must be a required input field. PipeCore verifies the workbook is nonempty and in scope, then deletes and inserts in one transaction. The report includes `summary.deleted_rows`.
+- SQL Server `datetime` and `smalldatetime` are mapped as logical `datetime`. Imports reject out-of-range values and values that would round in the target type.
+- `validate --output rows.ndjson` can save validated rows for application-side business rules. Each line contains `sheet`, `row`, and `values` in mapping order. Create the output parent in private storage and remove the file after processing. PipeCore publishes the file only after successful validation.
+
 ## Integrate from an application
 
 Launch the executable with an argument array and supply the DSN in the child environment. Parse stdout as JSON and handle stderr separately. See [Laravel/PHP, Go, Java, and Python examples](examples/wrappers/).

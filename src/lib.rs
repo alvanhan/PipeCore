@@ -120,6 +120,9 @@ pub async fn run(
                 5
             })?;
         if c.operation == "mutate"
+            && c.mutation
+                .as_ref()
+                .is_some_and(|m| m.matching.require_unique_index)
             && !indexes
                 .iter()
                 .any(|ix| ix.len() == keys.len() && keys.iter().all(|k| ix.contains(k)))
@@ -169,6 +172,15 @@ pub async fn run(
     if report.summary.error_count > 0 {
         report.fail("DATA_VALIDATION_FAILED");
         return Err(4);
+    }
+    if operation == "validate" {
+        if let Some(path) = output {
+            spool.write_output(path).map_err(|_| {
+                record(report, "IO_FAILED", "Cannot publish validated rows");
+                7
+            })?;
+        }
+        return Ok(());
     }
     if let Some(db) = &mut db {
         let retries = c
